@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 
 type Props = {
-  message: string;
+  message: string
   kind?: "success" | "error";
   onClose: () => void;
   ms?: number;

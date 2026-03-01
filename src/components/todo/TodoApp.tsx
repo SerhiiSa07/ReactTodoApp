@@ -5,9 +5,8 @@ import ErrorBanner from "../ui/ErrorBanner";
 import Toast from "../ui/Toast"; // поправь путь под свою структуру
 
 export default function TodoApp() {
-
   const { state, actions } = useTodos();
-  const { text, filter, visibleTodos, stats, isLoading, error, isPending, isAdding, isDeleting } = state;
+  const { text, filter, visibleTodos, stats, isLoading, error, isPending, isAdding, isDeleting, toast } = state;
 
   const {
     setText,
@@ -22,7 +21,7 @@ export default function TodoApp() {
 
   return (
    
-<> {state.toast && (
+<div> {state.toast && (
   <Toast
     message={state.toast}
     kind={state.toast.kind}
@@ -103,8 +102,8 @@ export default function TodoApp() {
 </ul>
       </div>
     </div>
-    </>
-
+    </div>
+   
   );
 }
 

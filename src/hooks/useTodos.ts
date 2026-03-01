@@ -5,7 +5,7 @@ import {readJson, writeJson} from "../utils/storage";
 type Filter = "all" | "active" | "done";
 
 type ToastState = {
-  message: string;
+  message: string
   kind: "success" | "error";
   ms?: number;
   actionLabel?: string;
@@ -45,7 +45,10 @@ export function useTodos() {
   const [filter, setFilter] = useState<Filter>("all");
 
   const [error, setError] = useState<string | null>(null);
-  const [toast, setToast] = useState<ToastState | null>(null);
+ // const [toast, setToast] = useState<ToastState | null>(null);
+const toast = null as ToastState | null;
+const setToast = () => {};
+
 
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
 
