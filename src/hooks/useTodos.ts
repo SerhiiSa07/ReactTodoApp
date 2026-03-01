@@ -1,13 +1,12 @@
 import { useCallback, useMemo, useState } from "react";
 import type { Todo } from "../types/todo";
-
-
+import {readJson, writeJson} from "../utils/storage";
 
 type Filter = "all" | "active" | "done";
 
 type ToastState = {
   message: string;
-  kind?: "success" | "error";
+  kind: "success" | "error";
   ms?: number;
   actionLabel?: string;
   onAction?: () => void;
@@ -19,7 +18,7 @@ type PendingDelete = {
   timerId: number;
 };
 
-const STORAGE_KEY = "todos";
+const STORAGE_KEY = "todos:v1";
 
 function loadTodos(): Todo[] {
   try {
@@ -34,15 +33,12 @@ function loadTodos(): Todo[] {
   }
 }
 
-function saveTodos(todos: Todo[]) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(todos));
-  } catch {
-    // noop
-  }
+function saveTodos(next: Todo[]) {  
+    writeJson(STORAGE_KEY, next);
 }
 
 export function useTodos() {
+
   // 1) STATE
   const [text, setText] = useState("");
   const [todos, setTodos] = useState<Todo[]>(() => loadTodos());
@@ -52,6 +48,8 @@ export function useTodos() {
   const [toast, setToast] = useState<ToastState | null>(null);
 
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
+
+const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
 
   // 2) DERIVED
   const stats = useMemo(() => {
@@ -66,20 +64,21 @@ export function useTodos() {
     return todos;
   }, [todos, filter]);
 
-  const isDeleting = useCallback(
-    (id: string) => pendingDelete?.todo.id === id,
-    [pendingDelete]
-  );
-
   // 3) HELPERS
-  const clearError = useCallback(() => setError(null), []);
-  const clearToast = useCallback(() => setToast(null), []);
+ const clearError = useCallback(() => setError(null), []);
+const clearToast = useCallback(() => setToast(null), []);
+
+const showError = useCallback((msg: string) => setError(msg), []);
+const showToast = useCallback((t: ToastState) => setToast(t), []);
 
   const undoDelete = useCallback(() => {
     if (!pendingDelete) return;
     window.clearTimeout(pendingDelete.timerId);
     setPendingDelete(null);
+    setToast(null);
   }, [pendingDelete]);
+
+  const isDeleting = (id: string) => pendingDelete?.todo.id === id;
 
   // 4) ACTIONS (минимум)
   const addTodo = useCallback(() => {
@@ -105,61 +104,81 @@ export function useTodos() {
   }, []);
 
   const removeTodo = useCallback((id: string) => {
-    // soft delete: помечаем как удаляемую, не удаляем из массива сразу
-    const idx = todos.findIndex((t) => t.id === id);
-    if (idx === -1) return;
-    const todo = todos[idx];
+  // финализируем предыдущий pending
+  setPendingDelete((cur) => {
+    if (!cur) return cur;
+    window.clearTimeout(cur.timerId);
+    return null;
+  });
 
-    if (pendingDelete) {
-      // если уже было pending удаление — просто сбрасываем его (last-only)
-      window.clearTimeout(pendingDelete.timerId);
-      setPendingDelete(null);
-    }
+  let captured: { todo: Todo; index: number } | null = null;
 
-    const timerId = window.setTimeout(() => {
-      setTodos((prev) => {
-        const updated = prev.filter((t) => t.id !== todo.id);
-        saveTodos(updated);
-        return updated;
-      });
-      setPendingDelete(null);
-    }, 3000);
+  // берём актуальное состояние списка
+  setTodos((prev) => {
+    const idx = prev.findIndex((t) => t.id === id);
+    if (idx === -1) return prev;
+    captured = { todo: prev[idx], index: idx };
+    return prev; // soft delete — пока не удаляем
+  });
 
-    setPendingDelete({ todo, index: idx, timerId });
-    setToast({
-      message: "Deleted",
-      kind: "success",
-      ms: 3000,
-      actionLabel: "Undo",
-      onAction: () => {
-        window.clearTimeout(timerId);
-        setPendingDelete(null);
-      },
+  if (!captured) return;
+
+  const { todo, index } = captured;
+
+  const timerId = window.setTimeout(() => {
+    setTodos((prev) => {
+      const updated = prev.filter((t) => t.id !== todo.id);
+      saveTodos(updated);
+      return updated;
     });
-  }, [todos, pendingDelete]);
+    setPendingDelete(null);
+  }, 3000);
+
+  setPendingDelete({ todo, index, timerId });
+
+  setToast({
+    message: "Deleted",
+    kind: "success",
+    ms: 3000,
+    actionLabel: "Undo",
+    onAction: () => {
+      window.clearTimeout(timerId);
+      setPendingDelete(null);
+    },
+  });
+}, []);
+
+const isPending = useCallback(
+  (id: string) => pendingIds.has(id),
+  [pendingIds]
+);
 
   return {
     state: {
       text,
-      setText,
       filter,
-      setFilter,
       todos,
       visibleTodos,
       stats,
       error,
       toast,
       isDeleting,
+      isPending
     },
     actions: {
+      setText,
+      setFilter,
+      setPendingIds,
       clearError,
       clearToast,
       addTodo,
       toggleTodo,
       removeTodo,
       undoDelete,
-      setError, // временно, если нужно
-      setToast, // временно, если нужно
+      showError,
+      showToast
+      //setError, // временно, если нужно
+      //setToast, // временно, если нужно
     },
   };
 }

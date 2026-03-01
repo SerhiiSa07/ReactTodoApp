@@ -5,8 +5,8 @@ type Props = {
   todo: Todo;
   onToggle: (id: string) => void;
   onRemove: (id: string) => void;
-   onEdit: (id: string, newText: string) => void;
-  isPending: boolean;
+  onEdit: (id: string, newText: string) => void;
+  isPending: (id: string) => boolean;
   isDeleting: boolean;
   onUndoDelete: () => void
 };
@@ -39,11 +39,11 @@ const showSpinner = useDelayed(isPending, 200);
       ].join(" ")}
     >
 
-      <li> className={[
+      <div> className={[
     "flex items-center gap-3 bg-slate-900/40 border border-white/10 rounded-xl px-3 py-2 transition",
     isDeleting ? "opacity-50" : "",
   ].join(" ")}
-  </li>
+  </div>
 
       <button
         type="button"
@@ -79,7 +79,10 @@ const showSpinner = useDelayed(isPending, 200);
         type="button"
         disabled={isPending || isDeleting}
         onClick={() => onRemove(todo.id)}
-        className="text-slate-300 hover:text-red-400 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-slate-300"
+        className={[
+    "text-slate-300 hover:text-red-400",
+    (isPending || isDeleting) ? "opacity-50 cursor-not-allowed hover:text-slate-300" : "",
+  ].join(" ")}
         aria-label="delete"
       >
         ✕
