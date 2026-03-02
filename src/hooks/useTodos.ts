@@ -1,8 +1,48 @@
 import { useCallback, useMemo, useState } from "react";
 import type { Todo } from "../types/todo";
-import {readJson, writeJson} from "../utils/storage";
+import  {writeJson} from "../utils/storage";
 
 type Filter = "all" | "active" | "done";
+
+type Stats = { total: number; active: number; done: number };
+
+type UseTodosState = {
+  text: string;
+  filter: Filter;
+  todos: Todo[];
+  visibleTodos: Todo[];
+  stats: Stats;
+  error: string | null;
+  toast: ToastState | null;
+  isLoading: boolean;
+  isAdding: boolean
+
+  // селектори/derived-функції
+  isDeleting: (id: string) => boolean;
+
+  isPending: (id: string) => boolean// якщо поки нема pending — НЕ додавай сюди isPending
+};
+
+type UseTodosActions = {
+  setText: (v: string) => void;
+  setFilter: (f: Filter) => void;
+
+  clearError: () => void;
+  clearToast: () => void;
+  showError: (msg: string) => void;
+  showToast: (t: ToastState) => void;
+
+  addTodo: () => void;
+  toggleTodo: (id: string) => void;
+  removeTodo: (id: string) => void;
+
+  undoDelete: () => void;
+};
+
+export type UseTodosReturn = {
+  state: UseTodosState;
+  actions: UseTodosActions;
+};
 
 type ToastState = {
   message: string
@@ -37,7 +77,7 @@ function saveTodos(next: Todo[]) {
     writeJson(STORAGE_KEY, next);
 }
 
-export function useTodos() {
+export function useTodos(): UseTodosReturn {
 
   // 1) STATE
   const [text, setText] = useState("");
@@ -45,14 +85,15 @@ export function useTodos() {
   const [filter, setFilter] = useState<Filter>("all");
 
   const [error, setError] = useState<string | null>(null);
- // const [toast, setToast] = useState<ToastState | null>(null);
-const toast = null as ToastState | null;
-const setToast = () => {};
 
+  const [isLoading] = useState(false);
+  const [isAdding] = useState(false);
+  const [setToast] = useState<ToastState | null>(null);
+  const toast = null as ToastState | null;
 
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
 
-const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
+const [pendingIds] = useState<Set<string>>(new Set());
 
   // 2) DERIVED
   const stats = useMemo(() => {
@@ -95,7 +136,7 @@ const showToast = useCallback((t: ToastState) => setToast(t), []);
       return updated;
     });
     setText("");
-    setToast({ message: "Added ✅", kind: "success", ms: 1200 });
+    showToast({ message: "Added ✅", kind: "success", ms: 1200 });
   }, [text]);
 
   const toggleTodo = useCallback((id: string) => {
@@ -156,7 +197,7 @@ const isPending = useCallback(
   [pendingIds]
 );
 
-  return {
+const result: UseTodosReturn = {
     state: {
       text,
       filter,
@@ -166,12 +207,13 @@ const isPending = useCallback(
       error,
       toast,
       isDeleting,
-      isPending
+      isPending,
+      isLoading,
+      isAdding
     },
     actions: {
       setText,
       setFilter,
-      setPendingIds,
       clearError,
       clearToast,
       addTodo,
@@ -183,5 +225,6 @@ const isPending = useCallback(
       //setError, // временно, если нужно
       //setToast, // временно, если нужно
     },
-  };
+  }
+  return result
 }

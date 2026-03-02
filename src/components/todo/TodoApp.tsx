@@ -7,20 +7,10 @@ import Toast from "../ui/Toast"; // поправь путь под свою ст
 export default function TodoApp() {
   const { state, actions } = useTodos();
   const { text, filter, visibleTodos, stats, isLoading, error, isPending, isAdding, isDeleting, toast } = state;
-
-  const {
-    setText,
-    setFilter,
-    addTodo,
-    toggleTodo,
-    removeTodo,
-    editTodo,
-    clearCompleted,
-    markAllDone
-  } = actions;
+  const {setText, setFilter, addTodo, toggleTodo, removeTodo, editTodo, clearCompleted, markAllDone} =actions;
 
   return (
-   
+
 <div> {state.toast && (
   <Toast
     message={state.toast}
@@ -103,7 +93,7 @@ export default function TodoApp() {
       </div>
     </div>
     </div>
-   
+
   );
 }
 
