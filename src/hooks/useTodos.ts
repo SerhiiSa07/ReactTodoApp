@@ -1,6 +1,7 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback,useEffect, useMemo, useState } from "react";
 import type { Todo } from "../types/todo";
-import  {writeJson} from "../utils/storage";
+import  {writeJson, readJson} from "../utils/storage";
+import {apiGetTodos} from "../utils/api";
 
 type Filter = "all" | "active" | "done";
 
@@ -15,18 +16,21 @@ type UseTodosState = {
   error: string | null;
   toast: ToastState | null;
   isLoading: boolean;
-  isAdding: boolean
+  isAdding: boolean;
+  beginId: (id: string) => void;
+  endId: (id: string) => void;
+  beginGlobal: () => void;
+  endGlobal: () => void
 
   // селектори/derived-функції
   isDeleting: (id: string) => boolean;
-
+  pendingCount: number;
   isPending: (id: string) => boolean// якщо поки нема pending — НЕ додавай сюди isPending
 };
 
 type UseTodosActions = {
   setText: (v: string) => void;
   setFilter: (f: Filter) => void;
-
   clearError: () => void;
   clearToast: () => void;
   showError: (msg: string) => void;
@@ -35,7 +39,6 @@ type UseTodosActions = {
   addTodo: () => void;
   toggleTodo: (id: string) => void;
   removeTodo: (id: string) => void;
-
   undoDelete: () => void;
 };
 
@@ -49,7 +52,7 @@ type ToastState = {
   kind: "success" | "error";
   ms?: number;
   actionLabel?: string;
-  onAction?: () => void;
+  onAction?: () => void; 
 };
 
 type PendingDelete = {
@@ -86,17 +89,51 @@ export function useTodos(): UseTodosReturn {
 
   const [error, setError] = useState<string | null>(null);
 
-  const [isLoading] = useState(false);
-  const [isAdding] = useState(false);
-  const [setToast] = useState<ToastState | null>(null);
-  const toast = null as ToastState | null;
+  const [isLoading, setIsLoading] = useState(false);
+  const [isAdding, setIsAdding] = useState(false);
+  const [toast, setToast] = useState<ToastState | null>(null);
 
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
 
-const [pendingIds] = useState<Set<string>>(new Set());
+const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
 
-  // 2) DERIVED
-  const stats = useMemo(() => {
+const [pendingCount, setPendingCount] = useState(0)
+
+  // 2) HELPERS
+ const clearError = useCallback(() => setError(null), []);
+const clearToast = useCallback(() => setToast(null), []);
+
+const showError = useCallback((msg: string) => setError(msg), []);
+const showToast = useCallback((t: ToastState) => setToast(t), []);
+
+useEffect(() => {
+  const ctrl = new AbortController();
+
+  (async () => {
+    try {
+      setIsLoading(true);
+      clearError();
+
+      const data = await apiGetTodos(ctrl.signal);
+      setTodos(data);
+      writeJson(STORAGE_KEY, data);
+    } catch (e) {
+      const cached = readJson<Todo[]>(STORAGE_KEY, []);
+      setTodos(cached);
+      showError(e instanceof Error ? e.message : "Failed to load todos");
+    } finally {
+      setIsLoading(false);
+    }
+  })();
+
+  return () => ctrl.abort();
+}, [clearError, showError]);
+ 
+const beginGlobal = useCallback(() => setPendingCount(c => c + 1), []);
+const endGlobal = useCallback(() => setPendingCount(c => Math.max(0, c - 1)), []);
+ 
+//3)Derived + Selectors
+ const stats = useMemo(() => {
     const done = todos.filter((t) => t.done).length;
     const active = todos.length - done;
     return { total: todos.length, active, done };
@@ -108,36 +145,37 @@ const [pendingIds] = useState<Set<string>>(new Set());
     return todos;
   }, [todos, filter]);
 
-  // 3) HELPERS
- const clearError = useCallback(() => setError(null), []);
-const clearToast = useCallback(() => setToast(null), []);
+  const isPending = useCallback(
+  (id: string) => pendingIds.has(id),
+  [pendingIds]
+);
 
-const showError = useCallback((msg: string) => setError(msg), []);
-const showToast = useCallback((t: ToastState) => setToast(t), []);
+const isDeleting = (id: string) => pendingDelete?.todo.id === id;
 
-  const undoDelete = useCallback(() => {
-    if (!pendingDelete) return;
-    window.clearTimeout(pendingDelete.timerId);
-    setPendingDelete(null);
-    setToast(null);
-  }, [pendingDelete]);
+//4) Actions 
+  const addTodo = useCallback(async () => {
+  const trimmed = text.trim();
+  if (!trimmed) return;
 
-  const isDeleting = (id: string) => pendingDelete?.todo.id === id;
+  setIsAdding(true);
+  clearError();
 
-  // 4) ACTIONS (минимум)
-  const addTodo = useCallback(() => {
-    const trimmed = text.trim();
-    if (!trimmed) return;
+  const temp: Todo = { id: crypto.randomUUID(), text: trimmed, done: false };
+  setTodos(prev => [temp, ...prev]);
+  setText("");
 
-    const next: Todo = { id: crypto.randomUUID(), text: trimmed, done: false };
-    setTodos((prev) => {
-      const updated = [next, ...prev];
-      saveTodos(updated);
-      return updated;
-    });
-    setText("");
+  try {
+    const saved = await apiCreateTodo(temp);
+    setTodos(prev => prev.map(t => (t.id === temp.id ? saved : t)));
     showToast({ message: "Added ✅", kind: "success", ms: 1200 });
-  }, [text]);
+  } catch (e) {
+    // rollback optimistic
+    setTodos(prev => prev.filter(t => t.id !== temp.id));
+    showError(e instanceof Error ? e.message : "Failed to add todo");
+  } finally {
+    setIsAdding(false);
+  }
+}, [text, clearError, showError, showToast]);
 
   const toggleTodo = useCallback((id: string) => {
     setTodos((prev) => {
@@ -183,19 +221,34 @@ const showToast = useCallback((t: ToastState) => setToast(t), []);
   setToast({
     message: "Deleted",
     kind: "success",
-    ms: 3000,
-    actionLabel: "Undo",
-    onAction: () => {
-      window.clearTimeout(timerId);
-      setPendingDelete(null);
     },
-  });
+  );
 }, []);
 
-const isPending = useCallback(
-  (id: string) => pendingIds.has(id),
-  [pendingIds]
-);
+const undoDelete = useCallback(() => {
+    if (!pendingDelete) return;
+    window.clearTimeout(pendingDelete.timerId);
+    setPendingDelete(null);
+    setToast(null);
+  }, [pendingDelete]);
+
+ const beginId = useCallback((id: string) => {
+  setPendingIds(prev => {
+    const next = new Set(prev);
+    next.add(id);
+    return next;
+  });
+  setPendingCount(c => c + 1);
+}, []);
+
+const endId = useCallback((id: string) => {
+  setPendingIds(prev => {
+    const next = new Set(prev);
+    next.delete(id);
+    return next;
+  });
+  setPendingCount(c => Math.max(0, c - 1));
+}, []);
 
 const result: UseTodosReturn = {
     state: {
@@ -207,6 +260,12 @@ const result: UseTodosReturn = {
       error,
       toast,
       isDeleting,
+      beginId,
+      beginGlobal,
+      endGlobal,
+      endId,
+
+      pendingCount,
       isPending,
       isLoading,
       isAdding

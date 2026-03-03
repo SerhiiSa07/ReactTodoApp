@@ -2,12 +2,11 @@ import { useEffect } from "react";
 
 type Props = {
   message: string
-  kind?: "success" | "error";
-  onClose: () => void;
+  kind?: "success" | "error"; 
   ms?: number;
-
   actionLabel?: string;
   onAction?: () => void;
+  onClose: () => void;
 };
 
 export default function Toast({
@@ -42,16 +41,7 @@ export default function Toast({
         <div className="flex-1">{message}</div>
 
         {actionLabel && onAction && (
-          <button
-            type="button"
-            onClick={() => {
-              onAction();
-              onClose();
-            }}
-            className="text-xs font-semibold px-2 py-1 rounded-lg border border-white/10 hover:border-white/20 hover:text-white"
-          >
-            {actionLabel}
-          </button>
+          <button type="button" onClick={onAction}> {actionLabel} </button>
         )}
       </div>
     </div>

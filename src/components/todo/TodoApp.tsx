@@ -11,13 +11,13 @@ export default function TodoApp() {
 
   return (
 
-<div> {state.toast && (
+<div> {toast && (
   <Toast
-    message={state.toast}
-    kind={state.toast.kind}
-    ms={state.toast.ms}
-    actionLabel={state.toast.actionLabel}
-    onAction={state.toast.onAction}
+    message={toast.message}
+    kind={toast.kind}
+    ms={toast.ms}
+    actionLabel={toast.actionLabel}
+    onAction={toast.onAction}
     onClose={actions.clearToast}
   />
 )}
