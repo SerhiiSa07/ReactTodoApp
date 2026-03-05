@@ -3,6 +3,7 @@ import type { Todo } from "../types/todo";
 import  {writeJson, readJson} from "../utils/storage";
 import {apiGetTodos} from "../utils/api";
 
+
 type Filter = "all" | "active" | "done";
 
 type Stats = { total: number; active: number; done: number };
@@ -13,10 +14,13 @@ type UseTodosState = {
   todos: Todo[];
   visibleTodos: Todo[];
   stats: Stats;
+
   error: string | null;
   toast: ToastState | null;
+
   isLoading: boolean;
   isAdding: boolean;
+  
   beginId: (id: string) => void;
   endId: (id: string) => void;
   beginGlobal: () => void;
