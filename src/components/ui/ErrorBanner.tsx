@@ -28,7 +28,7 @@ export default function ErrorBanner({
     };
   }, [message, onClose, visibleMs, fadeMs]);
 
-  return (
+  return ( 
     <div
       className={[
         "mt-2 text-sm rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2",

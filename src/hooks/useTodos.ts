@@ -1,7 +1,7 @@
 import { useCallback,useEffect, useMemo, useState } from "react";
 import type { Todo } from "../types/todo";
 import  {writeJson, readJson} from "../utils/storage";
-import {apiGetTodos} from "../utils/api";
+import {apiGetTodos, apiPatchTodo, apiCreateTodo, apiDeleteTodo} from "../api/todos";
 
 
 type Filter = "all" | "active" | "done";
@@ -20,7 +20,8 @@ type UseTodosState = {
 
   isLoading: boolean;
   isAdding: boolean;
-  
+  isBusy: boolean;
+
   beginId: (id: string) => void;
   endId: (id: string) => void;
   beginGlobal: () => void;
@@ -37,13 +38,13 @@ type UseTodosActions = {
   setFilter: (f: Filter) => void;
   clearError: () => void;
   clearToast: () => void;
-  showError: (msg: string) => void;
+  //showError: (msg: string) => void;
   showToast: (t: ToastState) => void;
 
   addTodo: () => void;
   toggleTodo: (id: string) => void;
   removeTodo: (id: string) => void;
-  undoDelete: () => void;
+  // undoDelete: () => void;
 };
 
 export type UseTodosReturn = {
@@ -80,9 +81,9 @@ function loadTodos(): Todo[] {
   }
 }
 
-function saveTodos(next: Todo[]) {  
-    writeJson(STORAGE_KEY, next);
-}
+// function saveTodos(next: Todo[]) {  
+//     writeJson(STORAGE_KEY, next);
+// }
 
 export function useTodos(): UseTodosReturn {
 
@@ -93,13 +94,13 @@ export function useTodos(): UseTodosReturn {
 
   const [error, setError] = useState<string | null>(null);
 
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
 
-  const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
+  const [pendingDelete] = useState<PendingDelete | null>(null);
 
-const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
+const [pendingIds, setPendingIds] = useState<Set<string>>(() => new Set());
 
 const [pendingCount, setPendingCount] = useState(0)
 
@@ -107,7 +108,7 @@ const [pendingCount, setPendingCount] = useState(0)
  const clearError = useCallback(() => setError(null), []);
 const clearToast = useCallback(() => setToast(null), []);
 
-const showError = useCallback((msg: string) => setError(msg), []);
+//const showError = useCallback((msg: string) => setError(msg), []);
 const showToast = useCallback((t: ToastState) => setToast(t), []);
 
 useEffect(() => {
@@ -116,7 +117,7 @@ useEffect(() => {
   (async () => {
     try {
       setIsLoading(true);
-      clearError();
+      setError(null);
 
       const data = await apiGetTodos(ctrl.signal);
       setTodos(data);
@@ -124,17 +125,17 @@ useEffect(() => {
     } catch (e) {
       const cached = readJson<Todo[]>(STORAGE_KEY, []);
       setTodos(cached);
-      showError(e instanceof Error ? e.message : "Failed to load todos");
+      setError(e instanceof Error ? e.message : "Failed to load todos");
     } finally {
       setIsLoading(false);
     }
   })();
 
   return () => ctrl.abort();
-}, [clearError, showError]);
+}, []);
  
-const beginGlobal = useCallback(() => setPendingCount(c => c + 1), []);
-const endGlobal = useCallback(() => setPendingCount(c => Math.max(0, c - 1)), []);
+const beginGlobal = useCallback(() => setPendingCount((c) => c + 1), []);
+const endGlobal = useCallback(() => setPendingCount((c) => Math.max(0, c - 1)), []);
  
 //3)Derived + Selectors
  const stats = useMemo(() => {
@@ -161,88 +162,32 @@ const isDeleting = (id: string) => pendingDelete?.todo.id === id;
   const trimmed = text.trim();
   if (!trimmed) return;
 
-  setIsAdding(true);
-  clearError();
-
   const temp: Todo = { id: crypto.randomUUID(), text: trimmed, done: false };
   setTodos(prev => [temp, ...prev]);
   setText("");
+  setIsAdding(true);
+  beginGlobal();
 
   try {
     const saved = await apiCreateTodo(temp);
-    setTodos(prev => prev.map(t => (t.id === temp.id ? saved : t)));
-    showToast({ message: "Added ✅", kind: "success", ms: 1200 });
+    setTodos((prev) => prev.map(t => (t.id === temp.id ? saved : t)));
+    writeJson(STORAGE_KEY, readJson<Todo[]>(STORAGE_KEY, []));
   } catch (e) {
     // rollback optimistic
-    setTodos(prev => prev.filter(t => t.id !== temp.id));
-    showError(e instanceof Error ? e.message : "Failed to add todo");
+    setTodos((prev) => prev.filter((t) => t.id !== temp.id));
+    setError(e instanceof Error ? e.message : "Failed to add todo");
   } finally {
     setIsAdding(false);
+    endGlobal();
   }
-}, [text, clearError, showError, showToast]);
-
-  const toggleTodo = useCallback((id: string) => {
-    setTodos((prev) => {
-      const updated = prev.map((t) => (t.id === id ? { ...t, done: !t.done } : t));
-      saveTodos(updated);
-      return updated;
-    });
-  }, []);
-
-  const removeTodo = useCallback((id: string) => {
-  // финализируем предыдущий pending
-  setPendingDelete((cur) => {
-    if (!cur) return cur;
-    window.clearTimeout(cur.timerId);
-    return null;
-  });
-
-  let captured: { todo: Todo; index: number } | null = null;
-
-  // берём актуальное состояние списка
-  setTodos((prev) => {
-    const idx = prev.findIndex((t) => t.id === id);
-    if (idx === -1) return prev;
-    captured = { todo: prev[idx], index: idx };
-    return prev; // soft delete — пока не удаляем
-  });
-
-  if (!captured) return;
-
-  const { todo, index } = captured;
-
-  const timerId = window.setTimeout(() => {
-    setTodos((prev) => {
-      const updated = prev.filter((t) => t.id !== todo.id);
-      saveTodos(updated);
-      return updated;
-    });
-    setPendingDelete(null);
-  }, 3000);
-
-  setPendingDelete({ todo, index, timerId });
-
-  setToast({
-    message: "Deleted",
-    kind: "success",
-    },
-  );
-}, []);
-
-const undoDelete = useCallback(() => {
-    if (!pendingDelete) return;
-    window.clearTimeout(pendingDelete.timerId);
-    setPendingDelete(null);
-    setToast(null);
-  }, [pendingDelete]);
+}, [text, beginGlobal, endGlobal]);
 
  const beginId = useCallback((id: string) => {
-  setPendingIds(prev => {
+  setPendingIds((prev) => {
     const next = new Set(prev);
-    next.add(id);
+    next.delete(id);
     return next;
   });
-  setPendingCount(c => c + 1);
 }, []);
 
 const endId = useCallback((id: string) => {
@@ -253,6 +198,58 @@ const endId = useCallback((id: string) => {
   });
   setPendingCount(c => Math.max(0, c - 1));
 }, []);
+
+  const toggleTodo = useCallback(async (id: string) => {
+    const before = todos.find((t) => t.id === id);
+    if (!before) return;
+    
+    beginId(id);
+
+    //optimistic
+    setTodos((prev) => prev.map((t) => (t.id === id ? { ...t, done: !t.done } : t)));
+
+try
+  {await apiPatchTodo(id, {done: !before.done});}
+
+catch (e) {
+  //rollback
+  setTodos((prev) => prev.map((t) => (t.id === id ? before : t)));
+  setError(e instanceof Error ? e.message : "Failed to toggle")
+} finally {
+  endId(id);
+}}, [todos, beginId, endId]);
+
+const removeTodo = useCallback(async (id: string) => {
+  const prev = todos;
+
+  beginId(id);
+  setTodos((curr) => curr.filter((t) => t.id !== id));
+
+  try {
+    await apiDeleteTodo(id);
+    showToast({
+      message: "Deleted",
+      kind: "success",
+      ms: 1200,
+    });
+  } catch (e) {
+    setTodos(prev);
+    setError(e instanceof Error ? e.message : "Failed to delete todo");
+  } finally {
+    endId(id);
+  }
+}, [todos, beginId, endId, showToast]);
+
+
+// const undoDelete = useCallback(() => {
+//     if (!pendingDelete) return;
+//     window.clearTimeout(pendingDelete.timerId);
+//     setPendingDelete(null);
+//     setToast(null);
+//   }, [pendingDelete]);
+
+const isBusy = pendingCount > 0;
+
 
 const result: UseTodosReturn = {
     state: {
@@ -272,7 +269,8 @@ const result: UseTodosReturn = {
       pendingCount,
       isPending,
       isLoading,
-      isAdding
+      isAdding,
+      isBusy
     },
     actions: {
       setText,
@@ -282,8 +280,8 @@ const result: UseTodosReturn = {
       addTodo,
       toggleTodo,
       removeTodo,
-      undoDelete,
-      showError,
+      // undoDelete,
+      //showError,
       showToast
       //setError, // временно, если нужно
       //setToast, // временно, если нужно

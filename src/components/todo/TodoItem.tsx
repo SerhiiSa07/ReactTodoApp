@@ -6,7 +6,7 @@ type Props = {
   onToggle: (id: string) => void;
   onRemove: (id: string) => void;
   onEdit: (id: string, newText: string) => void;
-  isPending: (id: string) => boolean;
+  isPending:  boolean;
   isDeleting: boolean;
   onUndoDelete: () => void
 };
