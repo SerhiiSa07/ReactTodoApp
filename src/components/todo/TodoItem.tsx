@@ -2,6 +2,7 @@ import type { Todo } from "../../types/todo";
 import { memo, useEffect, useState } from "react";
 
 type Props = {
+  value:string;
   todo: Todo;
   onToggle: (id: string) => void;
   onRemove: (id: string) => void;

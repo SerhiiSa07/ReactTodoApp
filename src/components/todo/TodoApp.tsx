@@ -47,26 +47,34 @@ export default function TodoApp() {
           <div className="mt-2 text-xs text-white/60">
   debug text: [{text}]
 </div>
+                
           <button
+
   onClick={actions.addTodo}
-  disabled={isAdding||isLoading}
+  disabled={!text.trim() || isAdding||isLoading}
   className="bg-blue-600 hover:bg-blue-700 px-4 rounded-xl font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
   type="button"
   aria-label="add"
 >
   {isAdding ? "..." : "+" }
+
+
 </button>
 
 <div className="text-xs text-slate-400">error: {String(error)}</div>
         </div>
 
         <TodoFilters
+
+
   filter={filter}
   total={stats.total}
   doneCount={stats.done}
   onChange={actions.setFilter}
   onMarkAll={markAllDone}
   onClearDone={clearCompleted}
+
+
 />
 
         <ul className="mt-4 space-y-2">

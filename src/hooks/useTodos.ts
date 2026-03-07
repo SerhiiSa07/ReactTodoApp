@@ -1,7 +1,7 @@
 import { useCallback,useEffect, useMemo, useState } from "react";
 import type { Todo } from "../types/todo";
 import  {writeJson, readJson} from "../utils/storage";
-import {apiGetTodos, apiPatchTodo, apiCreateTodo, apiDeleteTodo} from "../api/todos";
+import {apiGetTodos, apiPatchTodo, apiCreateTodo} from "../api/todos";
 
 
 type Filter = "all" | "active" | "done";
@@ -44,7 +44,7 @@ type UseTodosActions = {
   addTodo: () => void;
   toggleTodo: (id: string) => void;
   removeTodo: (id: string) => void;
-  // undoDelete: () => void;
+  undoDelete: () => void;
 };
 
 export type UseTodosReturn = {
@@ -81,9 +81,9 @@ function loadTodos(): Todo[] {
   }
 }
 
-// function saveTodos(next: Todo[]) {  
-//     writeJson(STORAGE_KEY, next);
-// }
+function saveTodos(next: Todo[]) {  
+    writeJson(STORAGE_KEY, next);
+}
 
 export function useTodos(): UseTodosReturn {
 
@@ -98,7 +98,7 @@ export function useTodos(): UseTodosReturn {
   const [isAdding, setIsAdding] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
 
-  const [pendingDelete] = useState<PendingDelete | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
 
 const [pendingIds, setPendingIds] = useState<Set<string>>(() => new Set());
 
@@ -159,6 +159,7 @@ const isDeleting = (id: string) => pendingDelete?.todo.id === id;
 
 //4) Actions 
   const addTodo = useCallback(async () => {
+    console.log('add before api')
   const trimmed = text.trim();
   if (!trimmed) return;
 
@@ -167,12 +168,14 @@ const isDeleting = (id: string) => pendingDelete?.todo.id === id;
   setText("");
   setIsAdding(true);
   beginGlobal();
-
   try {
     const saved = await apiCreateTodo(temp);
+    console.log('Add after api')
     setTodos((prev) => prev.map(t => (t.id === temp.id ? saved : t)));
     writeJson(STORAGE_KEY, readJson<Todo[]>(STORAGE_KEY, []));
+    
   } catch (e) {
+    console.log('add catch')
     // rollback optimistic
     setTodos((prev) => prev.filter((t) => t.id !== temp.id));
     setError(e instanceof Error ? e.message : "Failed to add todo");
@@ -219,34 +222,56 @@ catch (e) {
   endId(id);
 }}, [todos, beginId, endId]);
 
-const removeTodo = useCallback(async (id: string) => {
-  const prev = todos;
+  const removeTodo = useCallback((id: string) => {
+    console.log('Remove todo click')
+  // финализируем предыдущий pending
+  setPendingDelete((cur) => {
+    if (!cur) return cur;
+    window.clearTimeout(cur.timerId);
+    return null;
+  });
 
-  beginId(id);
-  setTodos((curr) => curr.filter((t) => t.id !== id));
+  let captured: { todo: Todo; index: number } | null = null;
 
-  try {
-    await apiDeleteTodo(id);
-    showToast({
-      message: "Deleted",
-      kind: "success",
-      ms: 1200,
+  // берём актуальное состояние списка
+  setTodos((prev) => {
+    const idx = prev.findIndex((t) => t.id === id);
+    console.log('[removeTodo] setTodos')
+    if (idx === -1) return prev;
+    captured = { todo: prev[idx], index: idx };
+    return prev; // soft delete — пока не удаляем
+  });
+
+  if (!captured) return;
+
+  const { todo, index }:{todo:Todo, index:number} = captured;
+
+  const timerId = window.setTimeout(() => {
+    console.log('[removeTodo] finalize delete')
+    setTodos((prev) => {
+      const updated = prev.filter((t) => t.id !== todo.id);
+      console.log('[removeTodo] after filter')
+      saveTodos(updated);
+      return updated;
     });
-  } catch (e) {
-    setTodos(prev);
-    setError(e instanceof Error ? e.message : "Failed to delete todo");
-  } finally {
-    endId(id);
-  }
-}, [todos, beginId, endId, showToast]);
+    setPendingDelete(null);
+  }, 3000);
 
+  setPendingDelete({ todo, index, timerId });
 
-// const undoDelete = useCallback(() => {
-//     if (!pendingDelete) return;
-//     window.clearTimeout(pendingDelete.timerId);
-//     setPendingDelete(null);
-//     setToast(null);
-//   }, [pendingDelete]);
+  setToast({
+    message: "Deleted",
+    kind: "success",
+    },
+  );
+}, []);
+
+const undoDelete = useCallback(() => {
+    if (!pendingDelete) return;
+    window.clearTimeout(pendingDelete.timerId);
+    setPendingDelete(null);
+    setToast(null);
+  }, [pendingDelete]);
 
 const isBusy = pendingCount > 0;
 
@@ -280,7 +305,7 @@ const result: UseTodosReturn = {
       addTodo,
       toggleTodo,
       removeTodo,
-      // undoDelete,
+      undoDelete,
       //showError,
       showToast
       //setError, // временно, если нужно
